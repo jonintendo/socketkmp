@@ -1,0 +1,260 @@
+package com.connection.socket.client
+
+
+import com.connection.socket.FrameSocket
+import com.connection.socket.SocketListener
+import com.connection.socket.TipoPacote
+import com.connection.socket.byteArrayToIntLittleEndian
+import io.ktor.network.selector.SelectorManager
+import io.ktor.network.sockets.BoundDatagramSocket
+import io.ktor.network.sockets.InetSocketAddress
+import io.ktor.network.sockets.aSocket
+import io.ktor.network.sockets.openReadChannel
+import io.ktor.network.sockets.openWriteChannel
+import io.ktor.utils.io.core.toByteArray
+import io.ktor.utils.io.readByteArray
+import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.writeByteArray
+import io.ktor.utils.io.writeStringUtf8
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.launch
+import kotlin.collections.plus
+
+class ClientSocketTCP(
+    private val serverip: String,
+    private val serverport: Int,
+) {
+
+    private var myJob: Job? = null
+    val customScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    var serverSocket: BoundDatagramSocket? = null
+    var processing = false
+
+
+    private val lastDatagramData = MutableStateFlow<ByteArray>(byteArrayOf())
+    val datagramFlow: SharedFlow<ByteArray> = lastDatagramData
+    private var listeners = mutableListOf<SocketListener>()
+    fun addListener(listener: SocketListener) {
+        listeners.add(listener)
+    }
+
+    fun removeListener(listener: SocketListener) {
+        listeners.remove(listener)
+    }
+
+    private fun onDatagramReceived(datagram: ByteArray) {
+        listeners.forEach { listener ->
+            listener.onDatagramReceived(datagram)
+        }
+    }
+
+
+    var datagramSocketFlow = MutableSharedFlow<FrameSocket>(
+        extraBufferCapacity = 1
+    )
+
+    companion object {
+        val customScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        fun sendTCP(ip: String, port: Int, message: String) = customScope.launch {
+            try {
+                val selectorManager = SelectorManager(Dispatchers.IO)
+                val socket = aSocket(selectorManager)
+                    .tcp()
+                    //.connect(InetSocketAddress("192.168.0.6", 50100))
+                    .connect(InetSocketAddress(ip, port))
+
+                // 2. Open a write channel (autoFlush = true ensures data is sent immediately)
+                val writeChannel = socket.openWriteChannel(autoFlush = true)
+                try {
+                    // 3. Send the data
+                    val message = "Hello from Ktor client!\n"
+                    writeChannel.writeStringUtf8(message)
+
+                    writeChannel.writeByteArray(message.toByteArray())
+                    println("Message sent.")
+                } catch (ex: Exception) {
+                    println(ex.message)
+                } finally {
+                    // 4. Clean up resources
+                    socket.close()
+                    selectorManager.close()
+                }
+            } catch (ex: Exception) {
+                println(ex.message)
+            }
+        }
+    }
+
+    fun start() {
+        myJob = customScope.launch {
+            try {
+                val selectorManager = SelectorManager(Dispatchers.IO)
+                val socket = aSocket(selectorManager)
+                    .tcp()
+                    //.connect(InetSocketAddress("192.168.0.6", 50100))
+                    .connect(InetSocketAddress(serverip, serverport))
+                val writeChannel = socket.openWriteChannel(autoFlush = true)
+
+                datagramSocketFlow.collect { datagram ->
+
+                    if (processing) return@collect
+                    processing = true
+
+                    try {
+                        //println("sizeeeeeeeeeeeeeeeeeeeeeeeeee  ${datagram.size}")
+                        println("${datagram.valor} socketttttttttttttttttttttttttttttttttt")
+
+                        writeChannel.writeByteArray(datagram.tamanho)
+
+
+                        val chunkSize = 4096
+                        val byteArrays: List<ByteArray> =
+                            datagram.valor.asList().chunked(chunkSize) { it.toByteArray() }
+                        byteArrays.forEach {
+                            writeChannel.writeByteArray(it)
+                        }
+                    } catch (ex: Exception) {
+                        println(ex.message)
+                    }
+
+                    processing = false
+                }
+
+            } catch (ex: Exception) {
+                println(ex.message)
+            }
+        }
+    }
+
+    fun startForReceive(tipo: TipoPacote) {
+        myJob = customScope.launch {
+            try {
+                val selectorManager = SelectorManager(Dispatchers.IO)
+
+                val socket = aSocket(selectorManager)
+                    .tcp()
+                    //.connect(InetSocketAddress("192.168.0.6", 50100))
+                    .connect(InetSocketAddress(serverip, serverport))
+
+                println("conectado com $serverip, $serverport")
+
+                try {
+                    launch {
+                        val readChannel = socket.openReadChannel()
+                        //val writeChannel = socket.openWriteChannel(autoFlush = true)
+                        try {
+                            while (true) {
+                                //writeChannel.writeStringUtf8("Hello from Client!\n")
+                                when (tipo) {
+                                    TipoPacote.RAW -> {
+                                        val datagramValue = readChannel.readByteArray(4096)
+                                        onDatagramReceived(datagramValue)
+                                        lastDatagramData.value = datagramValue
+                                    }
+
+                                    TipoPacote.FRAME -> {
+                                        val datagramSize =
+                                            byteArrayToIntLittleEndian(readChannel.readByteArray(4))
+
+                                        val datagramValue = readChannel.readByteArray(datagramSize)
+                                        onDatagramReceived(datagramValue)
+                                        lastDatagramData.value = datagramValue
+
+                                        //processReceivedFrameDatagramTCP(datagramValue)
+                                    }
+                                }
+
+                            }
+                        } finally {
+                            socket.close()
+                        }
+                    }
+
+                } catch (ex: Exception) {
+                    println(ex.message)
+                }
+            } catch (ex: Exception) {
+                println(ex.message)
+            }
+        }
+    }
+
+
+    var frameSize = 0
+    var messageFromSocket: ByteArray = byteArrayOf()
+    var restMessageFromSocket: ByteArray = byteArrayOf()
+
+    fun processReceivedFrameDatagramTCP(frameDatagram: ByteArray) {
+        try {
+            if (frameSize <= 0) {
+                if (restMessageFromSocket.size > 0) {
+                    frameSize =
+                        byteArrayToIntLittleEndian(restMessageFromSocket.sliceArray(IntRange(0, 3)))
+                    messageFromSocket += restMessageFromSocket.sliceArray(
+                        IntRange(
+                            4,
+                            restMessageFromSocket.size - 1
+                        )
+                    )
+                    messageFromSocket += frameDatagram
+                    restMessageFromSocket = byteArrayOf()
+                } else {
+                    frameSize = byteArrayToIntLittleEndian(frameDatagram.sliceArray(IntRange(0, 3)))
+                    messageFromSocket += restMessageFromSocket
+                    messageFromSocket += frameDatagram.sliceArray(
+                        IntRange(
+                            4,
+                            frameDatagram.size - 1
+                        )
+                    )
+                    restMessageFromSocket = byteArrayOf()
+                }
+
+            } else {
+                val howMuchToCompleteFrame = frameSize - messageFromSocket.size
+                // println("sizeeeeeeeeeeeeeeeeeeeeeeeee ${frameSize}")
+
+                if (howMuchToCompleteFrame >= frameDatagram.size) {
+                    messageFromSocket += frameDatagram
+                } else {
+                    messageFromSocket += frameDatagram.sliceArray(
+                        IntRange(
+                            0,
+                            howMuchToCompleteFrame - 1
+                        )
+                    )
+                    restMessageFromSocket = frameDatagram.sliceArray(
+                        IntRange(
+                            howMuchToCompleteFrame,
+                            frameDatagram.size - 1
+                        )
+                    )
+                    println(messageFromSocket)
+                }
+
+                if (messageFromSocket.size == frameSize) {
+                    println("size do agregado ${messageFromSocket.size}   size recebido $frameSize")
+                    println("$messageFromSocket socketttttttttttttttttttttttttttttttttt")
+                    onDatagramReceived(messageFromSocket)
+                    lastDatagramData.value = messageFromSocket
+                    messageFromSocket = byteArrayOf()
+                    frameSize = 0
+                }
+            }
+        } catch (ex: Exception) {
+            println(ex.message)
+        }
+    }
+
+    fun stop() {
+        myJob?.cancel()
+    }
+
+}
