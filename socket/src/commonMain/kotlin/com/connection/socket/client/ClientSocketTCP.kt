@@ -3,6 +3,7 @@ package com.connection.socket.client
 
 import com.connection.socket.FrameSocket
 import com.connection.socket.SocketListener
+import com.connection.socket.SocketProperties
 import com.connection.socket.TipoPacote
 import com.connection.socket.byteArrayToIntLittleEndian
 import io.ktor.network.selector.SelectorManager
@@ -24,6 +25,7 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.collections.plus
 
@@ -38,8 +40,10 @@ class ClientSocketTCP(
     var processing = false
 
 
-    private val lastDatagramData = MutableStateFlow<ByteArray>(byteArrayOf())
-    val datagramFlow: SharedFlow<ByteArray> = lastDatagramData
+    private val lastState = MutableStateFlow<SocketProperties>(SocketProperties())
+    val lastStateFlow: SharedFlow<SocketProperties> = lastState
+
+
     private var listeners = mutableListOf<SocketListener>()
     fun addListener(listener: SocketListener) {
         listeners.add(listener)
@@ -49,12 +53,20 @@ class ClientSocketTCP(
         listeners.remove(listener)
     }
 
-    private fun onDatagramReceived(datagram: ByteArray) {
+    private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
+        lastState.update { it.copy(lastDatagramData = datagram, lastTipoPacote = tipoPacote) }
         listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram)
+            listener.onDatagramReceived(datagram, tipoPacote)
         }
     }
 
+
+    private fun onSocketConnected(connected: Boolean) {
+        lastState.update { it.copy(lastConnectionState = connected) }
+        listeners.forEach { listener ->
+            listener.onSocketConnected(connected)
+        }
+    }
 
     var datagramSocketFlow = MutableSharedFlow<FrameSocket>(
         extraBufferCapacity = 1
@@ -67,8 +79,8 @@ class ClientSocketTCP(
                 val selectorManager = SelectorManager(Dispatchers.IO)
                 val socket = aSocket(selectorManager)
                     .tcp()
-                    //.connect(InetSocketAddress("192.168.0.6", 50100))
                     .connect(InetSocketAddress(ip, port))
+
 
                 // 2. Open a write channel (autoFlush = true ensures data is sent immediately)
                 val writeChannel = socket.openWriteChannel(autoFlush = true)
@@ -98,8 +110,10 @@ class ClientSocketTCP(
                 val selectorManager = SelectorManager(Dispatchers.IO)
                 val socket = aSocket(selectorManager)
                     .tcp()
-                    //.connect(InetSocketAddress("192.168.0.6", 50100))
                     .connect(InetSocketAddress(serverip, serverport))
+
+                onSocketConnected(true)
+
                 val writeChannel = socket.openWriteChannel(autoFlush = true)
 
                 datagramSocketFlow.collect { datagram ->
@@ -128,6 +142,7 @@ class ClientSocketTCP(
                 }
 
             } catch (ex: Exception) {
+                onSocketConnected(false)
                 println(ex.message)
             }
         }
@@ -140,23 +155,24 @@ class ClientSocketTCP(
 
                 val socket = aSocket(selectorManager)
                     .tcp()
-                    //.connect(InetSocketAddress("192.168.0.6", 50100))
                     .connect(InetSocketAddress(serverip, serverport))
-
+                onSocketConnected(true)
                 println("conectado com $serverip, $serverport")
 
-                try {
-                    launch {
-                        val readChannel = socket.openReadChannel()
-                        //val writeChannel = socket.openWriteChannel(autoFlush = true)
-                        try {
-                            while (true) {
+
+                launch {
+                    val readChannel = socket.openReadChannel()
+                    //val writeChannel = socket.openWriteChannel(autoFlush = true)
+                    try {
+                        while (true) {
+                            try {
+
                                 //writeChannel.writeStringUtf8("Hello from Client!\n")
                                 when (tipo) {
                                     TipoPacote.RAW -> {
                                         val datagramValue = readChannel.readByteArray(4096)
-                                        onDatagramReceived(datagramValue)
-                                        lastDatagramData.value = datagramValue
+                                        onDatagramReceived(datagramValue, TipoPacote.RAW)
+
                                     }
 
                                     TipoPacote.FRAME -> {
@@ -164,23 +180,26 @@ class ClientSocketTCP(
                                             byteArrayToIntLittleEndian(readChannel.readByteArray(4))
 
                                         val datagramValue = readChannel.readByteArray(datagramSize)
-                                        onDatagramReceived(datagramValue)
-                                        lastDatagramData.value = datagramValue
+                                        onDatagramReceived(datagramValue, TipoPacote.FRAME)
+
 
                                         //processReceivedFrameDatagramTCP(datagramValue)
                                     }
                                 }
-
+                            } catch (ex: Exception) {
+                                println(ex.message)
                             }
-                        } finally {
-                            socket.close()
                         }
-                    }
 
-                } catch (ex: Exception) {
-                    println(ex.message)
+                    } finally {
+                        socket.close()
+                        onSocketConnected(false)
+                    }
                 }
+
+
             } catch (ex: Exception) {
+                onSocketConnected(false)
                 println(ex.message)
             }
         }
@@ -242,8 +261,8 @@ class ClientSocketTCP(
                 if (messageFromSocket.size == frameSize) {
                     println("size do agregado ${messageFromSocket.size}   size recebido $frameSize")
                     println("$messageFromSocket socketttttttttttttttttttttttttttttttttt")
-                    onDatagramReceived(messageFromSocket)
-                    lastDatagramData.value = messageFromSocket
+                    onDatagramReceived(messageFromSocket, TipoPacote.FRAME)
+
                     messageFromSocket = byteArrayOf()
                     frameSize = 0
                 }
@@ -255,6 +274,7 @@ class ClientSocketTCP(
 
     fun stop() {
         myJob?.cancel()
+        onSocketConnected(false)
     }
 
 }

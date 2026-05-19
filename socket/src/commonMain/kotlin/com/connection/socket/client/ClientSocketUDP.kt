@@ -3,6 +3,7 @@ package com.connection.socket.client
 
 import com.connection.socket.FrameSocket
 import com.connection.socket.SocketListener
+import com.connection.socket.SocketProperties
 import com.connection.socket.TipoPacote
 import com.connection.socket.byteArrayToIntLittleEndian
 import io.ktor.network.selector.SelectorManager
@@ -10,22 +11,19 @@ import io.ktor.network.sockets.BoundDatagramSocket
 import io.ktor.network.sockets.Datagram
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
-import io.ktor.utils.io.core.BytePacketBuilder
 import io.ktor.utils.io.core.ByteReadPacket
-import io.ktor.utils.io.core.append
-import io.ktor.utils.io.core.build
 import io.ktor.utils.io.core.toByteArray
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.io.readByteArray
-import kotlin.collections.plus
 
 class ClientSocketUDP(
     private val serverip: String,
@@ -34,12 +32,12 @@ class ClientSocketUDP(
 
     private var myJob: Job? = null
     val customScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    var serverSocket: BoundDatagramSocket? = null
-    var processing = false
 
 
-    private val lastDatagramData = MutableStateFlow<ByteArray>(byteArrayOf())
-    val datagramFlow: SharedFlow<ByteArray> = lastDatagramData
+    private val lastState = MutableStateFlow<SocketProperties>(SocketProperties())
+    val lastStateFlow: SharedFlow<SocketProperties> = lastState
+
+
     private var listeners = mutableListOf<SocketListener>()
     fun addListener(listener: SocketListener) {
         listeners.add(listener)
@@ -49,14 +47,25 @@ class ClientSocketUDP(
         listeners.remove(listener)
     }
 
-    private fun onDatagramReceived(datagram: ByteArray) {
+    private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
+        lastState.update { it.copy(lastDatagramData = datagram, lastTipoPacote = tipoPacote) }
         listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram)
+            listener.onDatagramReceived(datagram, tipoPacote)
         }
     }
 
+    private fun onSocketConnected(connected: Boolean) {
+        lastState.update { it.copy(lastConnectionState = connected) }
+        listeners.forEach { listener ->
+            listener.onSocketConnected(connected)
+        }
+    }
 
     var datagramSocketFlow = MutableSharedFlow<FrameSocket>(
+        extraBufferCapacity = 1
+    )
+
+    var byteArraySocketFlow = MutableSharedFlow<ByteArray>(
         extraBufferCapacity = 1
     )
 
@@ -89,42 +98,46 @@ class ClientSocketUDP(
                 val selectorManager = SelectorManager(Dispatchers.IO)
                 val socket = aSocket(selectorManager)
                     .udp()
-                    //.connect(InetSocketAddress("192.168.0.6", 50100))
                     .connect(InetSocketAddress(serverip, serverport))
-
-
-                datagramSocketFlow.collect { datagram ->
-
-                    if (processing) return@collect
-                    processing = true
-
-                    //println("sizeeeeeeeeeeeeeeeeeeeeeeeeee  ${datagram.size}")
-                    println("${datagram.valor} socketttttttttttttttttttttttttttttttttt")
-
-                    socket.outgoing.send(
-                        Datagram(
-                            ByteReadPacket(datagram.tamanho),
-                            InetSocketAddress(serverip, serverport)
-                        )
-                    )
-
-                    val chunkSize = 4096
-                    val byteArrays: List<ByteArray> =
-                        datagram.valor.asList().chunked(chunkSize) { it.toByteArray() }
-                    byteArrays.forEach {
-                        // println("sizeeeeeeeeeeeeeeeeeeeeeeeeee  ${it.size}")
-                        socket.outgoing.send(
-                            Datagram(
-                                ByteReadPacket(it),
-                                InetSocketAddress(serverip, serverport)
-                            )
-                        )
+                onSocketConnected(true)
+                launch {
+                    byteArraySocketFlow.collect { datagram ->
+                        println("${datagram} socketttttttttttttttttttttttttttttttttt")
+                        try {
+                            val chunkSize = 4096
+                            val byteArrays: List<ByteArray> =
+                                datagram.asList().chunked(chunkSize) { it.toByteArray() }
+                            byteArrays.forEach {
+                                // println("sizeeeeeeeeeeeeeeeeeeeeeeeeee  ${it.size}")
+                                socket.outgoing.send(
+                                    Datagram(
+                                        ByteReadPacket(it),
+                                        InetSocketAddress(serverip, serverport)
+                                    )
+                                )
+                            }
+                        } catch (ex: Exception) {
+                            println(ex.message)
+                        }
                     }
-                    processing = false
+                }
+
+                launch {
+                    for (datagram in socket.incoming) {
+                        try {
+                            onDatagramReceived(datagram.packet.readByteArray(), TipoPacote.RAW)
+//                        val text = datagram.packet.readText()
+//                        println("Received from ${datagram.address}: $text")
+//                        address = datagram.address
+                        } catch (ex: Exception) {
+                            println(ex.message)
+                        }
+                    }
                 }
 
             } catch (ex: Exception) {
-                println(ex.stackTraceToString())
+                onSocketConnected(false)
+                println(ex.message)
             }
         }
     }
@@ -137,23 +150,24 @@ class ClientSocketUDP(
 
                 val socket = aSocket(selectorManager)
                     .udp()
-                    //.connect(InetSocketAddress("192.168.0.6", 50100))
                     .connect(InetSocketAddress(serverip, serverport))
+                onSocketConnected(true)
                 println("conectado com $serverip, $serverport")
-                socket.outgoing.send(
-                    Datagram(
-                        packet = BytePacketBuilder().apply { append("Hello from Client!") }
-                            .build(),
-                        address = InetSocketAddress(
-                            serverip,
-                            serverport
-                        ) // Destination address from the received packet
-                    )
-                )
+
+//                socket.outgoing.send(
+//                    Datagram(
+//                        packet = BytePacketBuilder().apply { append("Hello from Client!") }
+//                            .build(),
+//                        address = InetSocketAddress(
+//                            serverip,
+//                            serverport
+//                        ) // Destination address from the received packet
+//                    )
+//                )
 
 
-                try {
-                    for (datagram in socket.incoming) {
+                for (datagram in socket.incoming) {
+                    try {
                         // Extracting IP and Port from the datagram address
                         val address = datagram.address as? InetSocketAddress
                         val senderIp = address?.hostname
@@ -162,8 +176,7 @@ class ClientSocketUDP(
                         when (tipo) {
                             TipoPacote.RAW -> {
                                 val datagramValue = datagram.packet.readByteArray()
-                                onDatagramReceived(datagramValue)
-                                lastDatagramData.value = datagramValue
+                                onDatagramReceived(datagramValue, TipoPacote.RAW)
                             }
 
                             TipoPacote.FRAME -> {
@@ -171,13 +184,13 @@ class ClientSocketUDP(
                                 processReceivedFrameDatagramUDP(datagramValue)
                             }
                         }
-
-
+                    } catch (ex: Exception) {
+                        println(ex.message)
                     }
-                } catch (ex: Exception) {
-                    println(ex.message)
                 }
+
             } catch (ex: Exception) {
+                onSocketConnected(false)
                 println(ex.message)
             }
         }
@@ -192,8 +205,7 @@ class ClientSocketUDP(
             frameSize = byteArrayToIntLittleEndian(frameDatagram)
             println("size do agregado ${messageFromSocket.size}   size recebido $frameSize")
             println("$messageFromSocket socketttttttttttttttttttttttttttttttttt")
-            onDatagramReceived(messageFromSocket)
-            lastDatagramData.value = messageFromSocket
+            onDatagramReceived(messageFromSocket, TipoPacote.FRAME)
             println("sizeeeeeeeeeeeeeeeeeeeeeeeee ${messageFromSocket.size}")
             messageFromSocket = byteArrayOf()
 
@@ -205,6 +217,7 @@ class ClientSocketUDP(
 
     fun stop() {
         myJob?.cancel()
+        onSocketConnected(false)
     }
 
 }

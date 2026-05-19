@@ -2,6 +2,8 @@ package com.connection.socket.server
 
 import com.connection.socket.FrameSocket
 import com.connection.socket.SocketListener
+import com.connection.socket.SocketProperties
+import com.connection.socket.TipoPacote
 
 import io.ktor.network.selector.SelectorManager
 import io.ktor.network.sockets.ServerSocket
@@ -21,6 +23,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.io.InternalIoApi
@@ -31,8 +34,10 @@ class ServerSocketTCP(private val port: Int) {
     var serverSocket: ServerSocket? = null
 
 
-    private val lastDatagramData = MutableStateFlow<ByteArray>(byteArrayOf())
-    val datagramFlow: SharedFlow<ByteArray> = lastDatagramData
+    private val lastState = MutableStateFlow<SocketProperties>(SocketProperties())
+    val lastStateFlow: SharedFlow<SocketProperties> = lastState
+
+
     private var listeners = mutableListOf<SocketListener>()
     fun addListener(listener: SocketListener) {
         listeners.add(listener)
@@ -42,9 +47,17 @@ class ServerSocketTCP(private val port: Int) {
         listeners.remove(listener)
     }
 
-    private fun onDatagramReceived(datagram: ByteArray) {
+    private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
+        lastState.update { it.copy(lastDatagramData = datagram, lastTipoPacote = tipoPacote) }
         listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram)
+            listener.onDatagramReceived(datagram, tipoPacote)
+        }
+    }
+
+    private fun onSocketConnected(connected: Boolean) {
+        lastState.update { it.copy(lastConnectionState = connected) }
+        listeners.forEach { listener ->
+            listener.onSocketConnected(connected)
         }
     }
 
@@ -59,32 +72,34 @@ class ServerSocketTCP(private val port: Int) {
             try {
                 val selectorManager = SelectorManager(Dispatchers.IO)
                 serverSocket = aSocket(selectorManager).tcp().bind("0.0.0.0", port)
-
+                onSocketConnected(true)
                 println("Server is listening at ${serverSocket!!.localAddress}")
-                try {
-                    while (true) {
-                        val socket = serverSocket!!.accept()
-                        launch {
-                            val readChannel = socket.openReadChannel()
-                            try {
-                                while (true) {
+
+                while (true) {
+                    val socket = serverSocket!!.accept()
+                    launch {
+                        val readChannel = socket.openReadChannel()
+                        try {
+                            while (true) {
+                                try {
 //                                    val line = readChannel.readUTF8Line()
 //                                    if (line == null) break
 //                                    println("Received: $line")
-
                                     val datagramValue = readChannel.readByteArray(4096)
-                                    onDatagramReceived(datagramValue)
-                                    lastDatagramData.value = datagramValue
+                                    onDatagramReceived(datagramValue, TipoPacote.RAW)
+                                } catch (ex: Exception) {
+                                    println(ex.message)
                                 }
-                            } finally {
-                                socket.close()
                             }
+                        } finally {
+                            socket.close()
+                            onSocketConnected(false)
                         }
                     }
-                } catch (ex: Exception) {
-                    println(ex.message)
                 }
+
             } catch (ex: Exception) {
+                onSocketConnected(false)
                 println(ex.message)
             }
         }
@@ -100,10 +115,11 @@ class ServerSocketTCP(private val port: Int) {
             try {
                 val selectorManager = SelectorManager(Dispatchers.IO)
                 serverSocket = aSocket(selectorManager).tcp().bind("0.0.0.0", port)
-
+                onSocketConnected(true)
                 println("Server is listening at ${serverSocket!!.localAddress}")
 
                 while (true) {
+
                     val socket = serverSocket!!.accept()
                     launch {
                         val writeChannel = socket.openWriteChannel(autoFlush = true)
@@ -137,7 +153,7 @@ class ServerSocketTCP(private val port: Int) {
 ////
 //////                                val datagramValue = readChannel.readByteArray(4096)
 //////                                onDatagramReceived(datagramValue)
-//////                                lastDatagramData.value = datagramValue
+
 ////                                // writeChannel.writeStringUtf8("Hello from Server!")
 ////                                delay(200)
 ////                            }
@@ -147,6 +163,7 @@ class ServerSocketTCP(private val port: Int) {
 //                    }
                 }
             } catch (ex: Exception) {
+                onSocketConnected(false)
                 println(ex.message)
             }
         }
@@ -157,6 +174,7 @@ class ServerSocketTCP(private val port: Int) {
     fun stop() {
         myJob?.cancel()
         serverSocket?.close()
+        onSocketConnected(false)
 
     }
 
