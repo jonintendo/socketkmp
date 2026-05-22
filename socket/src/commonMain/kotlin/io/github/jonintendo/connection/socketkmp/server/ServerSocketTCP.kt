@@ -1,9 +1,9 @@
-package com.connection.socket.server
+package io.github.jonintendo.connection.socketkmp.server
 
-import com.connection.socket.FrameSocket
-import com.connection.socket.SocketListener
-import com.connection.socket.SocketProperties
-import com.connection.socket.TipoPacote
+import io.github.jonintendo.connection.socketkmp.FrameSocket
+import io.github.jonintendo.connection.socketkmp.SocketListener
+import io.github.jonintendo.connection.socketkmp.SocketProperties
+import io.github.jonintendo.connection.socketkmp.TipoPacote
 
 import io.ktor.network.selector.SelectorManager
 import io.ktor.network.sockets.ServerSocket
@@ -11,15 +11,12 @@ import io.ktor.network.sockets.aSocket
 import io.ktor.network.sockets.openReadChannel
 import io.ktor.network.sockets.openWriteChannel
 import io.ktor.utils.io.readByteArray
-import io.ktor.utils.io.readUTF8Line
 import io.ktor.utils.io.writeByteArray
-import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.IO
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow

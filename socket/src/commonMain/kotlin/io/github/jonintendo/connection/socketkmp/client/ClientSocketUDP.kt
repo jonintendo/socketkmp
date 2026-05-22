@@ -1,13 +1,12 @@
-package com.connection.socket.client
+package io.github.jonintendo.connection.socketkmp.client
 
 
-import com.connection.socket.FrameSocket
-import com.connection.socket.SocketListener
-import com.connection.socket.SocketProperties
-import com.connection.socket.TipoPacote
-import com.connection.socket.byteArrayToIntLittleEndian
+import io.github.jonintendo.connection.socketkmp.FrameSocket
+import io.github.jonintendo.connection.socketkmp.SocketListener
+import io.github.jonintendo.connection.socketkmp.SocketProperties
+import io.github.jonintendo.connection.socketkmp.TipoPacote
+import io.github.jonintendo.connection.socketkmp.byteArrayToIntLittleEndian
 import io.ktor.network.selector.SelectorManager
-import io.ktor.network.sockets.BoundDatagramSocket
 import io.ktor.network.sockets.Datagram
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
@@ -24,6 +23,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.io.readByteArray
+import kotlin.coroutines.cancellation.CancellationException
 
 class ClientSocketUDP(
     private val serverip: String,
@@ -108,7 +108,6 @@ class ClientSocketUDP(
                             val byteArrays: List<ByteArray> =
                                 datagram.asList().chunked(chunkSize) { it.toByteArray() }
                             byteArrays.forEach {
-                                // println("sizeeeeeeeeeeeeeeeeeeeeeeeeee  ${it.size}")
                                 socket.outgoing.send(
                                     Datagram(
                                         ByteReadPacket(it),
@@ -117,7 +116,7 @@ class ClientSocketUDP(
                                 )
                             }
                         } catch (ex: Exception) {
-                            println(ex.message)
+                            println("UDP in w${ex.message}")
                         }
                     }
                 }
@@ -126,18 +125,19 @@ class ClientSocketUDP(
                     for (datagram in socket.incoming) {
                         try {
                             onDatagramReceived(datagram.packet.readByteArray(), TipoPacote.RAW)
-//                        val text = datagram.packet.readText()
-//                        println("Received from ${datagram.address}: $text")
-//                        address = datagram.address
+                        } catch (e: CancellationException) {
+                            throw e // Always rethrow cancellation exceptions!
                         } catch (ex: Exception) {
-                            println(ex.message)
+                            println("UDP in r${ex.message}")
                         }
                     }
                 }
 
+            } catch (e: CancellationException) {
+                throw e // Always rethrow cancellation exceptions!
             } catch (ex: Exception) {
                 onSocketConnected(false)
-                println(ex.message)
+                println("UDP out ${ex.message}")
             }
         }
     }
@@ -147,51 +147,37 @@ class ClientSocketUDP(
         myJob = customScope.launch {
             try {
                 val selectorManager = SelectorManager(Dispatchers.IO)
-
                 val socket = aSocket(selectorManager)
                     .udp()
                     .connect(InetSocketAddress(serverip, serverport))
                 onSocketConnected(true)
                 println("conectado com $serverip, $serverport")
 
-//                socket.outgoing.send(
-//                    Datagram(
-//                        packet = BytePacketBuilder().apply { append("Hello from Client!") }
-//                            .build(),
-//                        address = InetSocketAddress(
-//                            serverip,
-//                            serverport
-//                        ) // Destination address from the received packet
-//                    )
-//                )
+                launch {
+                    for (datagram in socket.incoming) {
+                        try {
+                            val datagramValue = datagram.packet.readByteArray()
+                            when (tipo) {
+                                TipoPacote.RAW -> {
+                                    onDatagramReceived(datagramValue, TipoPacote.RAW)
+                                }
 
-
-                for (datagram in socket.incoming) {
-                    try {
-                        // Extracting IP and Port from the datagram address
-                        val address = datagram.address as? InetSocketAddress
-                        val senderIp = address?.hostname
-                        val senderPort = address?.port
-
-                        when (tipo) {
-                            TipoPacote.RAW -> {
-                                val datagramValue = datagram.packet.readByteArray()
-                                onDatagramReceived(datagramValue, TipoPacote.RAW)
+                                TipoPacote.FRAME -> {
+                                    processReceivedFrameDatagramUDP(datagramValue)
+                                }
                             }
-
-                            TipoPacote.FRAME -> {
-                                val datagramValue = datagram.packet.readByteArray()
-                                processReceivedFrameDatagramUDP(datagramValue)
-                            }
+                        } catch (e: CancellationException) {
+                            throw e // Always rethrow cancellation exceptions!
+                        } catch (ex: Exception) {
+                            println("UDP in ${ex.message}")
                         }
-                    } catch (ex: Exception) {
-                        println(ex.message)
                     }
                 }
-
+            } catch (e: CancellationException) {
+                throw e // Always rethrow cancellation exceptions!
             } catch (ex: Exception) {
                 onSocketConnected(false)
-                println(ex.message)
+                println("UDP out ${ex.message}")
             }
         }
     }

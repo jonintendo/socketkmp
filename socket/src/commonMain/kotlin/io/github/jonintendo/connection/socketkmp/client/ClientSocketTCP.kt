@@ -1,11 +1,11 @@
-package com.connection.socket.client
+package io.github.jonintendo.connection.socketkmp.client
 
 
-import com.connection.socket.FrameSocket
-import com.connection.socket.SocketListener
-import com.connection.socket.SocketProperties
-import com.connection.socket.TipoPacote
-import com.connection.socket.byteArrayToIntLittleEndian
+import io.github.jonintendo.connection.socketkmp.FrameSocket
+import io.github.jonintendo.connection.socketkmp.SocketListener
+import io.github.jonintendo.connection.socketkmp.SocketProperties
+import io.github.jonintendo.connection.socketkmp.TipoPacote
+import io.github.jonintendo.connection.socketkmp.byteArrayToIntLittleEndian
 import io.ktor.network.selector.SelectorManager
 import io.ktor.network.sockets.BoundDatagramSocket
 import io.ktor.network.sockets.InetSocketAddress
@@ -14,7 +14,6 @@ import io.ktor.network.sockets.openReadChannel
 import io.ktor.network.sockets.openWriteChannel
 import io.ktor.utils.io.core.toByteArray
 import io.ktor.utils.io.readByteArray
-import io.ktor.utils.io.readUTF8Line
 import io.ktor.utils.io.writeByteArray
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +27,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.collections.plus
+import kotlin.coroutines.cancellation.CancellationException
 
 class ClientSocketTCP(
     private val serverip: String,
@@ -135,7 +135,7 @@ class ClientSocketTCP(
                             writeChannel.writeByteArray(it)
                         }
                     } catch (ex: Exception) {
-                        println(ex.message)
+                        println("TCP in w ${ex.message}")
                     }
 
                     processing = false
@@ -143,7 +143,7 @@ class ClientSocketTCP(
 
             } catch (ex: Exception) {
                 onSocketConnected(false)
-                println(ex.message)
+                println("TCP out ${ex.message}")
             }
         }
     }
@@ -159,20 +159,17 @@ class ClientSocketTCP(
                 onSocketConnected(true)
                 println("conectado com $serverip, $serverport")
 
-
                 launch {
                     val readChannel = socket.openReadChannel()
                     //val writeChannel = socket.openWriteChannel(autoFlush = true)
                     try {
                         while (true) {
                             try {
-
                                 //writeChannel.writeStringUtf8("Hello from Client!\n")
                                 when (tipo) {
                                     TipoPacote.RAW -> {
                                         val datagramValue = readChannel.readByteArray(4096)
                                         onDatagramReceived(datagramValue, TipoPacote.RAW)
-
                                     }
 
                                     TipoPacote.FRAME -> {
@@ -181,26 +178,25 @@ class ClientSocketTCP(
 
                                         val datagramValue = readChannel.readByteArray(datagramSize)
                                         onDatagramReceived(datagramValue, TipoPacote.FRAME)
-
-
                                         //processReceivedFrameDatagramTCP(datagramValue)
                                     }
                                 }
+                            } catch (e: CancellationException) {
+                                throw e // Always rethrow cancellation exceptions!
                             } catch (ex: Exception) {
-                                println(ex.message)
+                                println("TCP in ${ex.message}")
                             }
                         }
-
                     } finally {
                         socket.close()
                         onSocketConnected(false)
                     }
                 }
-
-
+            } catch (e: CancellationException) {
+                throw e // Always rethrow cancellation exceptions!
             } catch (ex: Exception) {
                 onSocketConnected(false)
-                println(ex.message)
+                println("TCP out ${ex.message}")
             }
         }
     }

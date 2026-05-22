@@ -1,4 +1,4 @@
-package com.connection.socket
+package io.github.jonintendo.connection.socketkmp
 
 fun byteArrayToIntBigEndian(bytes: ByteArray): Int {
     require(bytes.size >= 4) { "ByteArray must have at least 4 bytes" }

@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidKotlinMultiplatformLibrary)
@@ -5,36 +8,32 @@ plugins {
     alias(libs.plugins.composeCompiler)
     //alias(libs.plugins.ktor)
     alias(libs.plugins.maven.publish)
+    signing
 }
+
+
 
 kotlin {
 
-    // Target declarations - add or remove as needed below. These define
-    // which platforms this KMP module supports.
-    // See: https://kotlinlang.org/docs/multiplatform-discover-project.html#targets
-    androidLibrary {
-        namespace = "com.connection.socket"
-        compileSdk = 36
-        minSdk = 24
-
-        withHostTestBuilder {
-        }
-
-        withDeviceTestBuilder {
-            sourceSetTreeName = "test"
-        }.configure {
-            instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    val keystoreProperties = Properties().apply {
+        val propertiesFile = rootProject.file("keystore.properties")
+        if (propertiesFile.exists()) {
+            load(FileInputStream(propertiesFile))
         }
     }
 
-    jvm()
-    // For iOS targets, this is also where you should
-    // configure native binary output. For more information, see:
-    // https://kotlinlang.org/docs/multiplatform-build-native-binaries.html#build-xcframeworks
 
-    // A step-by-step guide on how to include this library in an XCode
-    // project can be found here:
-    // https://developer.android.com/kotlin/multiplatform/migrate
+
+    androidLibrary {
+        namespace = "io.github.jonintendo.connection.socketkmp"
+        compileSdk = 36
+        minSdk = 24
+
+
+    }
+
+    jvm()
+
     val xcfName = "socketKit"
 
     iosX64 {
@@ -55,22 +54,12 @@ kotlin {
         }
     }
 
-    // Source set declarations.
-    // Declaring a target automatically creates a source set with the same name. By default, the
-    // Kotlin Gradle Plugin creates additional source sets that depend on each other, since it is
-    // common to share sources between related targets.
-    // See: https://kotlinlang.org/docs/multiplatform-hierarchy.html
+
     sourceSets {
         commonMain {
             dependencies {
                 implementation(libs.ktor.network)
                 implementation(libs.androidx.lifecycle.runtimeCompose)
-            }
-        }
-
-        commonTest {
-            dependencies {
-                implementation(libs.kotlin.test)
             }
         }
 
@@ -80,13 +69,6 @@ kotlin {
             }
         }
 
-        getByName("androidDeviceTest") {
-            dependencies {
-                implementation(libs.androidx.runner)
-                implementation(libs.androidx.core)
-                implementation(libs.androidx.testExt.junit)
-            }
-        }
 
         iosMain {
             dependencies {
@@ -103,21 +85,21 @@ kotlin {
 }
 
 
-group = "com.jonintendo"
+group = "io.github.jonintendo"
 version = "0.0.1"
 
 mavenPublishing {
-    //publishToMavenCentral()
-    //signAllPublications()
 
+    publishToMavenCentral()
+    signAllPublications()
     coordinates(
         group.toString(),
-        "socket",
+        "connection-socketkmp",
         version.toString()
     )
 
     pom {
-        name = "socket"
+        name = "Socket KMP"
         description = "A tile map component in pure compose multiplatform"
         inceptionYear = "2025"
         url = "https://github.com/jonintendo/socketkmp"

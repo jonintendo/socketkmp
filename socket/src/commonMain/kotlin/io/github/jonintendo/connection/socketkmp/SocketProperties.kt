@@ -1,4 +1,4 @@
-package com.connection.socket
+package io.github.jonintendo.connection.socketkmp
 
 data class SocketProperties(
     var lastDatagramData: ByteArray = byteArrayOf(),

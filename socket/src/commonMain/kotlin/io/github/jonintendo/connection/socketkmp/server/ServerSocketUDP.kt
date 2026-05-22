@@ -1,9 +1,9 @@
-package com.connection.socket.server
+package io.github.jonintendo.connection.socketkmp.server
 
-import com.connection.socket.FrameSocket
-import com.connection.socket.SocketListener
-import com.connection.socket.SocketProperties
-import com.connection.socket.TipoPacote
+import io.github.jonintendo.connection.socketkmp.FrameSocket
+import io.github.jonintendo.connection.socketkmp.SocketListener
+import io.github.jonintendo.connection.socketkmp.SocketProperties
+import io.github.jonintendo.connection.socketkmp.TipoPacote
 
 import io.ktor.network.selector.SelectorManager
 import io.ktor.network.sockets.BoundDatagramSocket

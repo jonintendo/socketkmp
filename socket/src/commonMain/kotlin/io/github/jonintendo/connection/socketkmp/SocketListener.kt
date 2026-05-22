@@ -1,4 +1,4 @@
-package com.connection.socket
+package io.github.jonintendo.connection.socketkmp
 
 interface SocketListener {
     fun onDatagramReceived(data: ByteArray, tipoPacote: TipoPacote)
