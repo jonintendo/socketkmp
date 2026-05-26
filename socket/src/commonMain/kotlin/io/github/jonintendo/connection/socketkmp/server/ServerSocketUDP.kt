@@ -1,6 +1,6 @@
 package io.github.jonintendo.connection.socketkmp.server
 
-import io.github.jonintendo.connection.socketkmp.FrameSocket
+
 import io.github.jonintendo.connection.socketkmp.SocketListener
 import io.github.jonintendo.connection.socketkmp.SocketProperties
 import io.github.jonintendo.connection.socketkmp.TipoPacote
@@ -10,10 +10,9 @@ import io.ktor.network.sockets.BoundDatagramSocket
 import io.ktor.network.sockets.Datagram
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
-import io.ktor.utils.io.core.BytePacketBuilder
-import io.ktor.utils.io.core.ByteReadPacket
-import io.ktor.utils.io.core.append
-import io.ktor.utils.io.core.build
+import io.ktor.utils.io.core.buildPacket
+import io.ktor.utils.io.core.writeFully
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,7 +24,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.io.Buffer
 import kotlinx.io.InternalIoApi
+import kotlinx.io.Source
 import kotlinx.io.readByteArray
 
 class ServerSocketUDP(private val port: Int) {
@@ -61,16 +62,13 @@ class ServerSocketUDP(private val port: Int) {
     }
 
 
-    var datagramSocketFlow = MutableSharedFlow<FrameSocket>(
-        extraBufferCapacity = 1
-    )
-
     var byteArraySocketFlow = MutableSharedFlow<ByteArray>(
         extraBufferCapacity = 1
     )
 
-    @OptIn(InternalIoApi::class)
-    fun start() {
+    val mutex = Mutex()
+
+    fun start(tipo: TipoPacote = TipoPacote.RAW) {
         myJob = customScope.launch {
             try {
                 val selectorManager = SelectorManager(Dispatchers.IO)
@@ -103,6 +101,20 @@ class ServerSocketUDP(private val port: Int) {
                         if (senderIp != null && senderPort != null) {
                             try {
                                 println("${datagram} socketttttttttttttttttttttttttttttttttt")
+
+                                if (tipo == TipoPacote.FRAME) {
+                                    val bytes =
+                                        ByteArray(4) { i -> (datagram.size shr (i * 8)).toByte() }
+                                    val bytesBuffer = Buffer().apply { write(bytes) }
+
+                                    serverSocket!!.outgoing.send(
+                                        Datagram(
+                                            bytesBuffer,
+                                            InetSocketAddress(senderIp, senderPort)
+                                        )
+                                    )
+                                }
+
                                 val chunkSize = 4096
                                 val byteArrays: List<ByteArray> =
                                     datagram.asList().chunked(chunkSize) { it.toByteArray() }
@@ -110,7 +122,9 @@ class ServerSocketUDP(private val port: Int) {
                                     // println("sizeeeeeeeeeeeeeeeeeeeeeeeeee  ${it.size}")
                                     serverSocket!!.outgoing.send(
                                         Datagram(
-                                            ByteReadPacket(it),
+                                            buildPacket {
+                                                writeFully(it)
+                                            },
                                             InetSocketAddress(senderIp, senderPort)
                                         )
                                     )
@@ -133,86 +147,7 @@ class ServerSocketUDP(private val port: Int) {
         // myJob?.start()
     }
 
-    val mutex = Mutex()
-    var processing = false
 
-    fun startForSend() {
-        myJob = customScope.launch {
-            try {
-                val selectorManager = SelectorManager(Dispatchers.IO)
-                serverSocket = aSocket(selectorManager).udp().bind("0.0.0.0", port)
-                var clientIp = ""
-                var clientPort = 0
-                onSocketConnected(true)
-                println("Server is listening at ${serverSocket!!.localAddress}")
-
-                launch {
-                    datagramSocketFlow.collect { datagram ->
-                        try {
-                            if (processing || clientPort == 0) return@collect
-                            processing = true
-
-                            //println("sizeeeeeeeeeeeeeeeeeeeeeeeeee  ${datagram.size}")
-                            println("${datagram.valor} socketttttttttttttttttttttttttttttttttt")
-
-                            serverSocket!!.outgoing.send(
-                                Datagram(
-                                    ByteReadPacket(datagram.tamanho),
-                                    InetSocketAddress(clientIp, clientPort)
-                                )
-                            )
-
-                            val chunkSize = 4096
-                            val byteArrays: List<ByteArray> =
-                                datagram.valor.asList().chunked(chunkSize) { it.toByteArray() }
-                            byteArrays.forEach {
-                                // println("sizeeeeeeeeeeeeeeeeeeeeeeeeee  ${it.size}")
-                                serverSocket!!.outgoing.send(
-                                    Datagram(
-                                        ByteReadPacket(it),
-                                        InetSocketAddress(clientIp, clientPort)
-                                    )
-                                )
-                            }
-                            processing = false
-                        } catch (ex: Exception) {
-                            println(ex.message)
-                        }
-                    }
-                }
-
-                for (datagram in serverSocket!!.incoming) {
-                    println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1")
-
-                    try {
-                        val address = datagram.address as? InetSocketAddress
-                        clientIp = address?.hostname ?: ""
-                        clientPort = address?.port ?: 0
-
-                        val datagramValue = datagram.packet.readByteArray()
-                        onDatagramReceived(datagramValue, TipoPacote.FRAME)
-
-                        serverSocket!!.outgoing.send(
-                            Datagram(
-                                packet = BytePacketBuilder().apply { append("Hello from Server!") }
-                                    .build(),
-                                address = datagram.address // Destination address from the received packet
-                            )
-                        )
-
-                    } catch (ex: Exception) {
-                        println(ex.message)
-                    }
-                }
-
-
-            } catch (ex: Exception) {
-                onSocketConnected(false)
-                println(ex.message)
-            }
-        }
-        // myJob?.start()
-    }
 
 
     fun stop() {

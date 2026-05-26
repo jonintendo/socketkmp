@@ -1,7 +1,6 @@
 package io.github.jonintendo.connection.socketkmp.client
 
 
-import io.github.jonintendo.connection.socketkmp.FrameSocket
 import io.github.jonintendo.connection.socketkmp.SocketListener
 import io.github.jonintendo.connection.socketkmp.SocketProperties
 import io.github.jonintendo.connection.socketkmp.TipoPacote
@@ -10,8 +9,9 @@ import io.ktor.network.selector.SelectorManager
 import io.ktor.network.sockets.Datagram
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
-import io.ktor.utils.io.core.ByteReadPacket
+import io.ktor.utils.io.core.buildPacket
 import io.ktor.utils.io.core.toByteArray
+import io.ktor.utils.io.core.writeFully
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.io.Buffer
 import kotlinx.io.readByteArray
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -61,9 +62,6 @@ class ClientSocketUDP(
         }
     }
 
-    var datagramSocketFlow = MutableSharedFlow<FrameSocket>(
-        extraBufferCapacity = 1
-    )
 
     var byteArraySocketFlow = MutableSharedFlow<ByteArray>(
         extraBufferCapacity = 1
@@ -79,9 +77,11 @@ class ClientSocketUDP(
                     //.connect(InetSocketAddress("192.168.0.6", 50100))
                     .connect(InetSocketAddress(ip, port))
 
+                val messageBuffer = Buffer().apply { write(message.toByteArray()) }
+
                 socket.outgoing.send(
                     Datagram(
-                        ByteReadPacket(message.toByteArray()),
+                        messageBuffer,
                         InetSocketAddress(ip, port)
                     )
                 )
@@ -92,14 +92,23 @@ class ClientSocketUDP(
         }
     }
 
-    fun start() {
+    fun start(tipo: TipoPacote = TipoPacote.RAW) {
         myJob = customScope.launch {
             try {
                 val selectorManager = SelectorManager(Dispatchers.IO)
                 val socket = aSocket(selectorManager)
                     .udp()
                     .connect(InetSocketAddress(serverip, serverport))
+
+                socket.outgoing.send(
+                    Datagram(
+                        Buffer().apply { write("oi".toByteArray()) },
+                        InetSocketAddress(serverip, serverport)
+                    )
+                )
+
                 onSocketConnected(true)
+
                 launch {
                     byteArraySocketFlow.collect { datagram ->
                         println("${datagram} socketttttttttttttttttttttttttttttttttt")
@@ -110,7 +119,9 @@ class ClientSocketUDP(
                             byteArrays.forEach {
                                 socket.outgoing.send(
                                     Datagram(
-                                        ByteReadPacket(it),
+                                        buildPacket {
+                                            writeFully(it)
+                                        },
                                         InetSocketAddress(serverip, serverport)
                                     )
                                 )
@@ -124,7 +135,19 @@ class ClientSocketUDP(
                 launch {
                     for (datagram in socket.incoming) {
                         try {
-                            onDatagramReceived(datagram.packet.readByteArray(), TipoPacote.RAW)
+                            val datagramValue = datagram.packet.readByteArray()
+                            //  onDatagramReceived(datagram.packet.readByteArray(), TipoPacote.RAW)
+                            when (tipo) {
+                                TipoPacote.RAW -> {
+                                    onDatagramReceived(datagramValue, TipoPacote.RAW)
+                                }
+
+                                TipoPacote.FRAME -> {
+                                    processReceivedFrameDatagramUDP(datagramValue)
+                                }
+                            }
+
+
                         } catch (e: CancellationException) {
                             throw e // Always rethrow cancellation exceptions!
                         } catch (ex: Exception) {
@@ -142,45 +165,6 @@ class ClientSocketUDP(
         }
     }
 
-
-    fun startForReceive(tipo: TipoPacote) {
-        myJob = customScope.launch {
-            try {
-                val selectorManager = SelectorManager(Dispatchers.IO)
-                val socket = aSocket(selectorManager)
-                    .udp()
-                    .connect(InetSocketAddress(serverip, serverport))
-                onSocketConnected(true)
-                println("conectado com $serverip, $serverport")
-
-                launch {
-                    for (datagram in socket.incoming) {
-                        try {
-                            val datagramValue = datagram.packet.readByteArray()
-                            when (tipo) {
-                                TipoPacote.RAW -> {
-                                    onDatagramReceived(datagramValue, TipoPacote.RAW)
-                                }
-
-                                TipoPacote.FRAME -> {
-                                    processReceivedFrameDatagramUDP(datagramValue)
-                                }
-                            }
-                        } catch (e: CancellationException) {
-                            throw e // Always rethrow cancellation exceptions!
-                        } catch (ex: Exception) {
-                            println("UDP in ${ex.message}")
-                        }
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e // Always rethrow cancellation exceptions!
-            } catch (ex: Exception) {
-                onSocketConnected(false)
-                println("UDP out ${ex.message}")
-            }
-        }
-    }
 
     var frameSize = 0
     var messageFromSocket: ByteArray = byteArrayOf()

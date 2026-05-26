@@ -1,6 +1,6 @@
 package io.github.jonintendo.connection.socketkmp.server
 
-import io.github.jonintendo.connection.socketkmp.FrameSocket
+
 import io.github.jonintendo.connection.socketkmp.SocketListener
 import io.github.jonintendo.connection.socketkmp.SocketProperties
 import io.github.jonintendo.connection.socketkmp.TipoPacote
@@ -59,12 +59,13 @@ class ServerSocketTCP(private val port: Int) {
     }
 
 
-    var datagramSocketFlow = MutableSharedFlow<FrameSocket>(
+
+    var byteArraySocketFlow = MutableSharedFlow<ByteArray>(
         extraBufferCapacity = 1
     )
 
     @OptIn(InternalIoApi::class)
-    fun start() {
+    fun start(tipo: TipoPacote = TipoPacote.RAW) {
         myJob = customScope.launch {
             try {
                 val selectorManager = SelectorManager(Dispatchers.IO)
@@ -93,6 +94,41 @@ class ServerSocketTCP(private val port: Int) {
                             onSocketConnected(false)
                         }
                     }
+
+
+                    launch {
+                        val writeChannel = socket.openWriteChannel(autoFlush = true)
+                        byteArraySocketFlow.collect { datagram ->
+
+                            if (processing) return@collect
+                            processing = true
+
+                            try {
+                                //println("sizeeeeeeeeeeeeeeeeeeeeeeeeee  ${datagram.size}")
+                                println("${datagram} socketttttttttttttttttttttttttttttttttt")
+
+
+                                if (tipo == TipoPacote.FRAME) {
+                                    val bytes = ByteArray(4) { i -> (datagram.size shr (i * 8)).toByte() }
+                                    writeChannel.writeByteArray(bytes)
+                                }
+
+                                val chunkSize = 4096
+                                val byteArrays: List<ByteArray> =
+                                    datagram.asList().chunked(chunkSize) { it.toByteArray() }
+                                byteArrays.forEach {
+                                    writeChannel.writeByteArray(it)
+                                }
+                            } catch (ex: Exception) {
+                                println("TCP in w ${ex.message}")
+                            }
+
+                            processing = false
+                        }
+                    }
+
+
+
                 }
 
             } catch (ex: Exception) {
@@ -106,66 +142,66 @@ class ServerSocketTCP(private val port: Int) {
     val mutex = Mutex()
     var processing = false
 
-
-    fun startForSend() {
-        myJob = customScope.launch {
-            try {
-                val selectorManager = SelectorManager(Dispatchers.IO)
-                serverSocket = aSocket(selectorManager).tcp().bind("0.0.0.0", port)
-                onSocketConnected(true)
-                println("Server is listening at ${serverSocket!!.localAddress}")
-
-                while (true) {
-
-                    val socket = serverSocket!!.accept()
-                    launch {
-                        val writeChannel = socket.openWriteChannel(autoFlush = true)
-                        println("socketttttttttttttttttttttttttttttttttt")
-                        datagramSocketFlow.collect { datagram ->
-                            if (processing) return@collect
-                            processing = true
-                            try {
-                                println("${datagram.valor} socketttttttttttttttttttttttttttttttttt")
-                                writeChannel.writeByteArray(datagram.tamanho)
-                                writeChannel.writeByteArray(datagram.valor)
-                            } catch (ex: Exception) {
-                                println(ex.message)
-                            }
-                            processing = false
-                        }
-                    }
+//
+//    fun startForSend() {
+//        myJob = customScope.launch {
+//            try {
+//                val selectorManager = SelectorManager(Dispatchers.IO)
+//                serverSocket = aSocket(selectorManager).tcp().bind("0.0.0.0", port)
+//                onSocketConnected(true)
+//                println("Server is listening at ${serverSocket!!.localAddress}")
+//
+//                while (true) {
+//
+//                    val socket = serverSocket!!.accept()
 //                    launch {
-//                        //val readChannel = socket.openReadChannel()
 //                        val writeChannel = socket.openWriteChannel(autoFlush = true)
-//                        try {
-//
-//                            datagramSocketFlow.collect { datagram ->
-//                                println(datagram.tamanho)
+//                        println("socketttttttttttttttttttttttttttttttttt")
+//                        datagramSocketFlow.collect { datagram ->
+//                            if (processing) return@collect
+//                            processing = true
+//                            try {
+//                                println("${datagram.valor} socketttttttttttttttttttttttttttttttttt")
+//                                writeChannel.writeByteArray(datagram.tamanho)
 //                                writeChannel.writeByteArray(datagram.valor)
+//                            } catch (ex: Exception) {
+//                                println(ex.message)
 //                            }
-//
-////                            while (true) {
-////                               // println(readChannel.readUTF8Line())
-////                                writeChannel.writeStringUtf8("Hello from Server!\n")
-////
-//////                                val datagramValue = readChannel.readByteArray(4096)
-//////                                onDatagramReceived(datagramValue)
-
-////                                // writeChannel.writeStringUtf8("Hello from Server!")
-////                                delay(200)
-////                            }
-//                        } finally {
-//                            socket.close()
+//                            processing = false
 //                        }
 //                    }
-                }
-            } catch (ex: Exception) {
-                onSocketConnected(false)
-                println(ex.message)
-            }
-        }
-        // myJob?.start()
-    }
+////                    launch {
+////                        //val readChannel = socket.openReadChannel()
+////                        val writeChannel = socket.openWriteChannel(autoFlush = true)
+////                        try {
+////
+////                            datagramSocketFlow.collect { datagram ->
+////                                println(datagram.tamanho)
+////                                writeChannel.writeByteArray(datagram.valor)
+////                            }
+////
+//////                            while (true) {
+//////                               // println(readChannel.readUTF8Line())
+//////                                writeChannel.writeStringUtf8("Hello from Server!\n")
+//////
+////////                                val datagramValue = readChannel.readByteArray(4096)
+////////                                onDatagramReceived(datagramValue)
+//
+//////                                // writeChannel.writeStringUtf8("Hello from Server!")
+//////                                delay(200)
+//////                            }
+////                        } finally {
+////                            socket.close()
+////                        }
+////                    }
+//                }
+//            } catch (ex: Exception) {
+//                onSocketConnected(false)
+//                println(ex.message)
+//            }
+//        }
+//        // myJob?.start()
+//    }
 
 
     fun stop() {

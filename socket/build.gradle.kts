@@ -15,14 +15,6 @@ plugins {
 
 kotlin {
 
-    val keystoreProperties = Properties().apply {
-        val propertiesFile = rootProject.file("keystore.properties")
-        if (propertiesFile.exists()) {
-            load(FileInputStream(propertiesFile))
-        }
-    }
-
-
 
     androidLibrary {
         namespace = "io.github.jonintendo.connection.socketkmp"
@@ -86,12 +78,12 @@ kotlin {
 
 
 group = "io.github.jonintendo"
-version = "0.0.1"
+version = "0.0.2"
 
 mavenPublishing {
 
-    publishToMavenCentral()
-    signAllPublications()
+//    publishToMavenCentral()
+//    signAllPublications()
     coordinates(
         group.toString(),
         "connection-socketkmp",
