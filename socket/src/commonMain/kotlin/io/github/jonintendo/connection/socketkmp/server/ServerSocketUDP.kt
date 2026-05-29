@@ -1,7 +1,7 @@
 package io.github.jonintendo.connection.socketkmp.server
 
 
-import io.github.jonintendo.connection.socketkmp.SocketListener
+import io.github.jonintendo.connection.socketkmp.server.SocketServerListener
 import io.github.jonintendo.connection.socketkmp.SocketProperties
 import io.github.jonintendo.connection.socketkmp.TipoPacote
 
@@ -25,11 +25,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.io.Buffer
-import kotlinx.io.InternalIoApi
-import kotlinx.io.Source
 import kotlinx.io.readByteArray
 
-class ServerSocketUDP(private val port: Int) {
+class ServerSocketUDP(val port: Int) {
     private var myJob: Job? = null
     val customScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     var serverSocket: BoundDatagramSocket? = null
@@ -38,26 +36,26 @@ class ServerSocketUDP(private val port: Int) {
     private val lastState = MutableStateFlow<SocketProperties>(SocketProperties())
     val lastStateFlow: SharedFlow<SocketProperties> = lastState
 
-    private var listeners = mutableListOf<SocketListener>()
-    fun addListener(listener: SocketListener) {
+    private var listeners = mutableListOf<SocketServerListener>()
+    fun addListener(listener: SocketServerListener) {
         listeners.add(listener)
     }
 
-    fun removeListener(listener: SocketListener) {
+    fun removeListener(listener: SocketServerListener) {
         listeners.remove(listener)
     }
 
     private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
         lastState.update { it.copy(lastDatagramData = datagram, lastTipoPacote = tipoPacote) }
         listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram, tipoPacote)
+            listener.onDatagramReceived(datagram, tipoPacote, port)
         }
     }
 
     private fun onSocketConnected(connected: Boolean) {
         lastState.update { it.copy(lastConnectionState = connected) }
         listeners.forEach { listener ->
-            listener.onSocketConnected(connected)
+            listener.onSocketConnected(connected, port)
         }
     }
 
@@ -146,8 +144,6 @@ class ServerSocketUDP(private val port: Int) {
         }
         // myJob?.start()
     }
-
-
 
 
     fun stop() {

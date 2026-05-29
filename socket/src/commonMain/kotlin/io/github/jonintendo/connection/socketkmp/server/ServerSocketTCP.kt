@@ -1,7 +1,5 @@
 package io.github.jonintendo.connection.socketkmp.server
 
-
-import io.github.jonintendo.connection.socketkmp.SocketListener
 import io.github.jonintendo.connection.socketkmp.SocketProperties
 import io.github.jonintendo.connection.socketkmp.TipoPacote
 
@@ -25,7 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.io.InternalIoApi
 
-class ServerSocketTCP(private val port: Int) {
+class ServerSocketTCP( val port: Int) {
     private var myJob: Job? = null
     val customScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     var serverSocket: ServerSocket? = null
@@ -35,29 +33,28 @@ class ServerSocketTCP(private val port: Int) {
     val lastStateFlow: SharedFlow<SocketProperties> = lastState
 
 
-    private var listeners = mutableListOf<SocketListener>()
-    fun addListener(listener: SocketListener) {
+    private var listeners = mutableListOf<SocketServerListener>()
+    fun addListener(listener: SocketServerListener) {
         listeners.add(listener)
     }
 
-    fun removeListener(listener: SocketListener) {
+    fun removeListener(listener: SocketServerListener) {
         listeners.remove(listener)
     }
 
     private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
         lastState.update { it.copy(lastDatagramData = datagram, lastTipoPacote = tipoPacote) }
         listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram, tipoPacote)
+            listener.onDatagramReceived(datagram, tipoPacote, port)
         }
     }
 
     private fun onSocketConnected(connected: Boolean) {
         lastState.update { it.copy(lastConnectionState = connected) }
         listeners.forEach { listener ->
-            listener.onSocketConnected(connected)
+            listener.onSocketConnected(connected, port)
         }
     }
-
 
 
     var byteArraySocketFlow = MutableSharedFlow<ByteArray>(
@@ -109,7 +106,8 @@ class ServerSocketTCP(private val port: Int) {
 
 
                                 if (tipo == TipoPacote.FRAME) {
-                                    val bytes = ByteArray(4) { i -> (datagram.size shr (i * 8)).toByte() }
+                                    val bytes =
+                                        ByteArray(4) { i -> (datagram.size shr (i * 8)).toByte() }
                                     writeChannel.writeByteArray(bytes)
                                 }
 
@@ -128,7 +126,6 @@ class ServerSocketTCP(private val port: Int) {
                     }
 
 
-
                 }
 
             } catch (ex: Exception) {
@@ -141,67 +138,6 @@ class ServerSocketTCP(private val port: Int) {
 
     val mutex = Mutex()
     var processing = false
-
-//
-//    fun startForSend() {
-//        myJob = customScope.launch {
-//            try {
-//                val selectorManager = SelectorManager(Dispatchers.IO)
-//                serverSocket = aSocket(selectorManager).tcp().bind("0.0.0.0", port)
-//                onSocketConnected(true)
-//                println("Server is listening at ${serverSocket!!.localAddress}")
-//
-//                while (true) {
-//
-//                    val socket = serverSocket!!.accept()
-//                    launch {
-//                        val writeChannel = socket.openWriteChannel(autoFlush = true)
-//                        println("socketttttttttttttttttttttttttttttttttt")
-//                        datagramSocketFlow.collect { datagram ->
-//                            if (processing) return@collect
-//                            processing = true
-//                            try {
-//                                println("${datagram.valor} socketttttttttttttttttttttttttttttttttt")
-//                                writeChannel.writeByteArray(datagram.tamanho)
-//                                writeChannel.writeByteArray(datagram.valor)
-//                            } catch (ex: Exception) {
-//                                println(ex.message)
-//                            }
-//                            processing = false
-//                        }
-//                    }
-////                    launch {
-////                        //val readChannel = socket.openReadChannel()
-////                        val writeChannel = socket.openWriteChannel(autoFlush = true)
-////                        try {
-////
-////                            datagramSocketFlow.collect { datagram ->
-////                                println(datagram.tamanho)
-////                                writeChannel.writeByteArray(datagram.valor)
-////                            }
-////
-//////                            while (true) {
-//////                               // println(readChannel.readUTF8Line())
-//////                                writeChannel.writeStringUtf8("Hello from Server!\n")
-//////
-////////                                val datagramValue = readChannel.readByteArray(4096)
-////////                                onDatagramReceived(datagramValue)
-//
-//////                                // writeChannel.writeStringUtf8("Hello from Server!")
-//////                                delay(200)
-//////                            }
-////                        } finally {
-////                            socket.close()
-////                        }
-////                    }
-//                }
-//            } catch (ex: Exception) {
-//                onSocketConnected(false)
-//                println(ex.message)
-//            }
-//        }
-//        // myJob?.start()
-//    }
 
 
     fun stop() {

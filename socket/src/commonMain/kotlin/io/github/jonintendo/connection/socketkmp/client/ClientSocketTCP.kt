@@ -2,7 +2,7 @@ package io.github.jonintendo.connection.socketkmp.client
 
 
 
-import io.github.jonintendo.connection.socketkmp.SocketListener
+import io.github.jonintendo.connection.socketkmp.server.SocketServerListener
 import io.github.jonintendo.connection.socketkmp.SocketProperties
 import io.github.jonintendo.connection.socketkmp.TipoPacote
 import io.github.jonintendo.connection.socketkmp.byteArrayToIntLittleEndian
@@ -32,8 +32,8 @@ import kotlin.collections.plus
 import kotlin.coroutines.cancellation.CancellationException
 
 class ClientSocketTCP(
-    private val serverip: String,
-    private val serverport: Int,
+    val serverip: String,
+    val serverport: Int,
 ) {
 
     private var myJob: Job? = null
@@ -46,19 +46,19 @@ class ClientSocketTCP(
     val lastStateFlow: SharedFlow<SocketProperties> = lastState
 
 
-    private var listeners = mutableListOf<SocketListener>()
-    fun addListener(listener: SocketListener) {
+    private var listeners = mutableListOf<SocketClientListener>()
+    fun addListener(listener: SocketClientListener) {
         listeners.add(listener)
     }
 
-    fun removeListener(listener: SocketListener) {
+    fun removeListener(listener: SocketClientListener) {
         listeners.remove(listener)
     }
 
     private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
         lastState.update { it.copy(lastDatagramData = datagram, lastTipoPacote = tipoPacote) }
         listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram, tipoPacote)
+            listener.onDatagramReceived(datagram, tipoPacote,serverip,serverport)
         }
     }
 
@@ -66,7 +66,7 @@ class ClientSocketTCP(
     private fun onSocketConnected(connected: Boolean) {
         lastState.update { it.copy(lastConnectionState = connected) }
         listeners.forEach { listener ->
-            listener.onSocketConnected(connected)
+            listener.onSocketConnected(connected, serverip,serverport)
         }
     }
 
@@ -187,59 +187,7 @@ class ClientSocketTCP(
             }
         }
     }
-//
-//    fun startForReceive(tipo: TipoPacote) {
-//        myJob = customScope.launch {
-//            try {
-//                val selectorManager = SelectorManager(Dispatchers.IO)
-//
-//                val socket = aSocket(selectorManager)
-//                    .tcp()
-//                    .connect(InetSocketAddress(serverip, serverport))
-//                onSocketConnected(true)
-//                println("conectado com $serverip, $serverport")
-//
-//                launch {
-//                    val readChannel = socket.openReadChannel()
-//                    //val writeChannel = socket.openWriteChannel(autoFlush = true)
-//                    try {
-//                        while (true) {
-//                            try {
-//                                //writeChannel.writeStringUtf8("Hello from Client!\n")
-//                                when (tipo) {
-//                                    TipoPacote.RAW -> {
-//                                        val datagramValue = readChannel.readByteArray(4096)
-//                                        onDatagramReceived(datagramValue, TipoPacote.RAW)
-//                                    }
-//
-//                                    TipoPacote.FRAME -> {
-//                                        val datagramSize =
-//                                            byteArrayToIntLittleEndian(readChannel.readByteArray(4))
-//
-//                                        val datagramValue = readChannel.readByteArray(datagramSize)
-//                                        onDatagramReceived(datagramValue, TipoPacote.FRAME)
-//                                        //processReceivedFrameDatagramTCP(datagramValue)
-//                                    }
-//                                }
-//                            } catch (e: CancellationException) {
-//                                throw e // Always rethrow cancellation exceptions!
-//                            } catch (ex: Exception) {
-//                                println("TCP in ${ex.message}")
-//                            }
-//                        }
-//                    } finally {
-//                        socket.close()
-//                        onSocketConnected(false)
-//                    }
-//                }
-//            } catch (e: CancellationException) {
-//                throw e // Always rethrow cancellation exceptions!
-//            } catch (ex: Exception) {
-//                onSocketConnected(false)
-//                println("TCP out ${ex.message}")
-//            }
-//        }
-//    }
+
 
 
     var frameSize = 0

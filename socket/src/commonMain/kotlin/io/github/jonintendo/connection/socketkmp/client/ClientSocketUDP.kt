@@ -1,7 +1,7 @@
 package io.github.jonintendo.connection.socketkmp.client
 
 
-import io.github.jonintendo.connection.socketkmp.SocketListener
+import io.github.jonintendo.connection.socketkmp.server.SocketServerListener
 import io.github.jonintendo.connection.socketkmp.SocketProperties
 import io.github.jonintendo.connection.socketkmp.TipoPacote
 import io.github.jonintendo.connection.socketkmp.byteArrayToIntLittleEndian
@@ -27,8 +27,8 @@ import kotlinx.io.readByteArray
 import kotlin.coroutines.cancellation.CancellationException
 
 class ClientSocketUDP(
-    private val serverip: String,
-    private val serverport: Int,
+    val serverip: String,
+    val serverport: Int,
 ) {
 
     private var myJob: Job? = null
@@ -39,26 +39,26 @@ class ClientSocketUDP(
     val lastStateFlow: SharedFlow<SocketProperties> = lastState
 
 
-    private var listeners = mutableListOf<SocketListener>()
-    fun addListener(listener: SocketListener) {
+    private var listeners = mutableListOf<SocketClientListener>()
+    fun addListener(listener: SocketClientListener) {
         listeners.add(listener)
     }
 
-    fun removeListener(listener: SocketListener) {
+    fun removeListener(listener: SocketClientListener) {
         listeners.remove(listener)
     }
 
     private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
         lastState.update { it.copy(lastDatagramData = datagram, lastTipoPacote = tipoPacote) }
         listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram, tipoPacote)
+            listener.onDatagramReceived(datagram, tipoPacote,serverip, serverport )
         }
     }
 
     private fun onSocketConnected(connected: Boolean) {
         lastState.update { it.copy(lastConnectionState = connected) }
         listeners.forEach { listener ->
-            listener.onSocketConnected(connected)
+            listener.onSocketConnected(connected,serverip,serverport)
         }
     }
 
