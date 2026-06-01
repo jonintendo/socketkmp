@@ -9,6 +9,7 @@ import io.ktor.network.selector.SelectorManager
 import io.ktor.network.sockets.Datagram
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
+import io.ktor.util.reflect.instanceOf
 import io.ktor.utils.io.core.buildPacket
 import io.ktor.utils.io.core.toByteArray
 import io.ktor.utils.io.core.writeFully
@@ -17,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -25,6 +27,10 @@ import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
 import kotlinx.io.readByteArray
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 class ClientSocketUDP(
     val serverip: String,
@@ -48,17 +54,24 @@ class ClientSocketUDP(
         listeners.remove(listener)
     }
 
+    @OptIn(ExperimentalTime::class)
     private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
-        lastState.update { it.copy(lastDatagramData = datagram, lastTipoPacote = tipoPacote) }
+        lastState.update {
+            it.copy(
+                lastDatagramData = datagram,
+                lastDatagramType = tipoPacote,
+                lastDatagramTime = Clock.System.now().epochSeconds
+            )
+        }
         listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram, tipoPacote,serverip, serverport )
+            listener.onDatagramReceived(datagram, tipoPacote, serverip, serverport)
         }
     }
 
     private fun onSocketConnected(connected: Boolean) {
         lastState.update { it.copy(lastConnectionState = connected) }
         listeners.forEach { listener ->
-            listener.onSocketConnected(connected,serverip,serverport)
+            listener.onSocketConnected(connected, serverip, serverport)
         }
     }
 
@@ -92,6 +105,8 @@ class ClientSocketUDP(
         }
     }
 
+
+    @OptIn(ExperimentalTime::class)
     fun start(tipo: TipoPacote = TipoPacote.RAW) {
         myJob = customScope.launch {
             try {
@@ -99,15 +114,22 @@ class ClientSocketUDP(
                 val socket = aSocket(selectorManager)
                     .udp()
                     .connect(InetSocketAddress(serverip, serverport))
-
-                socket.outgoing.send(
-                    Datagram(
-                        Buffer().apply { write("oi".toByteArray()) },
-                        InetSocketAddress(serverip, serverport)
-                    )
-                )
-
                 onSocketConnected(true)
+
+                launch {
+                    while (true) {
+                        socket.outgoing.send(
+                            Datagram(
+                                Buffer().apply { write("oi".toByteArray()) },
+                                InetSocketAddress(serverip, serverport)
+                            )
+                        )
+                        if ((Clock.System.now().epochSeconds - lastState.value.lastDatagramTime) > 60)
+                            onSocketConnected(false)
+
+                        delay(1000)
+                    }
+                }
 
                 launch {
                     byteArraySocketFlow.collect { datagram ->
@@ -136,7 +158,7 @@ class ClientSocketUDP(
                     for (datagram in socket.incoming) {
                         try {
                             val datagramValue = datagram.packet.readByteArray()
-                            //  onDatagramReceived(datagram.packet.readByteArray(), TipoPacote.RAW)
+
                             when (tipo) {
                                 TipoPacote.RAW -> {
                                     onDatagramReceived(datagramValue, TipoPacote.RAW)

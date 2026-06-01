@@ -56,7 +56,7 @@ class ClientSocketTCP(
     }
 
     private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
-        lastState.update { it.copy(lastDatagramData = datagram, lastTipoPacote = tipoPacote) }
+        lastState.update { it.copy(lastDatagramData = datagram, lastDatagramType = tipoPacote) }
         listeners.forEach { listener ->
             listener.onDatagramReceived(datagram, tipoPacote,serverip,serverport)
         }

@@ -43,7 +43,7 @@ class ServerSocketTCP( val port: Int) {
     }
 
     private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
-        lastState.update { it.copy(lastDatagramData = datagram, lastTipoPacote = tipoPacote) }
+        lastState.update { it.copy(lastDatagramData = datagram, lastDatagramType = tipoPacote) }
         listeners.forEach { listener ->
             listener.onDatagramReceived(datagram, tipoPacote, port)
         }
@@ -61,7 +61,7 @@ class ServerSocketTCP( val port: Int) {
         extraBufferCapacity = 1
     )
 
-    @OptIn(InternalIoApi::class)
+
     fun start(tipo: TipoPacote = TipoPacote.RAW) {
         myJob = customScope.launch {
             try {

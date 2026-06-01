@@ -1,9 +1,15 @@
 package io.github.jonintendo.connection.socketkmp
 
+import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
+
 data class SocketProperties(
     var lastDatagramData: ByteArray = byteArrayOf(),
-    var lastTipoPacote: TipoPacote = TipoPacote.RAW,
+    var lastDatagramType: TipoPacote = TipoPacote.RAW,
     var lastConnectionState: Boolean = false,
+    var lastDatagramTime: Long = 0
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

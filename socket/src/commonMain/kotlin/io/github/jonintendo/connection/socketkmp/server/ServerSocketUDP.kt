@@ -11,6 +11,7 @@ import io.ktor.network.sockets.Datagram
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
 import io.ktor.utils.io.core.buildPacket
+import io.ktor.utils.io.core.toByteArray
 import io.ktor.utils.io.core.writeFully
 
 import kotlinx.coroutines.CoroutineScope
@@ -18,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -26,6 +28,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.io.Buffer
 import kotlinx.io.readByteArray
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 class ServerSocketUDP(val port: Int) {
     private var myJob: Job? = null
@@ -45,8 +49,15 @@ class ServerSocketUDP(val port: Int) {
         listeners.remove(listener)
     }
 
+    @OptIn(ExperimentalTime::class)
     private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
-        lastState.update { it.copy(lastDatagramData = datagram, lastTipoPacote = tipoPacote) }
+        lastState.update {
+            it.copy(
+                lastDatagramData = datagram,
+                lastDatagramType = tipoPacote,
+                lastDatagramTime = Clock.System.now().epochSeconds
+            )
+        }
         listeners.forEach { listener ->
             listener.onDatagramReceived(datagram, tipoPacote, port)
         }
@@ -66,6 +77,7 @@ class ServerSocketUDP(val port: Int) {
 
     val mutex = Mutex()
 
+    @OptIn(ExperimentalTime::class)
     fun start(tipo: TipoPacote = TipoPacote.RAW) {
         myJob = customScope.launch {
             try {
@@ -75,6 +87,8 @@ class ServerSocketUDP(val port: Int) {
                 var senderPort: Int? = null
                 onSocketConnected(true)
                 println("Server is listening at ${serverSocket!!.localAddress}")
+
+
 
                 launch {
                     for (datagram in serverSocket!!.incoming) {
@@ -87,7 +101,11 @@ class ServerSocketUDP(val port: Int) {
                             }
 
                             val datagramValue = datagram.packet.readByteArray()
-                            onDatagramReceived(datagramValue, TipoPacote.RAW)
+                            if (datagramValue.contentToString() == "oi") {
+                                println("Cliente $senderIp:$senderPort  conectado")
+                            } else {
+                                onDatagramReceived(datagramValue, TipoPacote.RAW)
+                            }
                         } catch (ex: Exception) {
                             println(ex.message)
                         }
