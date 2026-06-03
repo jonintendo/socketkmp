@@ -114,7 +114,7 @@ class ClientSocketUDP(
                 val socket = aSocket(selectorManager)
                     .udp()
                     .connect(InetSocketAddress(serverip, serverport))
-                onSocketConnected(true)
+
 
                 launch {
                     while (true) {
@@ -124,8 +124,12 @@ class ClientSocketUDP(
                                 InetSocketAddress(serverip, serverport)
                             )
                         )
-                        if ((Clock.System.now().epochSeconds - lastState.value.lastDatagramTime) > 60)
+                        if ((Clock.System.now().epochSeconds - lastState.value.lastDatagramTime) > 600)
                             onSocketConnected(false)
+
+//                        println((Clock.System.now().epochSeconds - lastState.value.lastDatagramTime))
+//                        println((Clock.System.now().epochSeconds))
+//                        println(( lastState.value.lastDatagramTime))
 
                         delay(1000)
                     }
@@ -158,7 +162,7 @@ class ClientSocketUDP(
                     for (datagram in socket.incoming) {
                         try {
                             val datagramValue = datagram.packet.readByteArray()
-
+                            onSocketConnected(true)
                             when (tipo) {
                                 TipoPacote.RAW -> {
                                     onDatagramReceived(datagramValue, TipoPacote.RAW)
