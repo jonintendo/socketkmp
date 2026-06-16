@@ -1,79 +1,31 @@
 package io.github.jonintendo.connection.socketkmp.client
 
-
-
-import io.github.jonintendo.connection.socketkmp.server.SocketServerListener
-import io.github.jonintendo.connection.socketkmp.SocketProperties
+import io.github.jonintendo.connection.socketkmp.SocketKMP
 import io.github.jonintendo.connection.socketkmp.TipoPacote
 import io.github.jonintendo.connection.socketkmp.byteArrayToIntLittleEndian
 import io.ktor.network.selector.SelectorManager
 import io.ktor.network.sockets.BoundDatagramSocket
-
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
 import io.ktor.network.sockets.openReadChannel
 import io.ktor.network.sockets.openWriteChannel
-
 import io.ktor.utils.io.core.toByteArray
 import io.ktor.utils.io.readByteArray
 import io.ktor.utils.io.writeByteArray
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.IO
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlin.collections.plus
 import kotlin.coroutines.cancellation.CancellationException
 
 class ClientSocketTCP(
-    val serverip: String,
-    val serverport: Int,
-) {
+     val ip: String,
+     val port: Int,
+) : SocketKMP(ip,port){
 
-    private var myJob: Job? = null
-    val customScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    var serverSocket: BoundDatagramSocket? = null
     var processing = false
-
-
-    private val lastState = MutableStateFlow<SocketProperties>(SocketProperties())
-    val lastStateFlow: SharedFlow<SocketProperties> = lastState
-
-
-    private var listeners = mutableListOf<SocketClientListener>()
-    fun addListener(listener: SocketClientListener) {
-        listeners.add(listener)
-    }
-
-    fun removeListener(listener: SocketClientListener) {
-        listeners.remove(listener)
-    }
-
-    private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
-        lastState.update { it.copy(lastDatagramData = datagram, lastDatagramType = tipoPacote) }
-        listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram, tipoPacote,serverip,serverport)
-        }
-    }
-
-
-    private fun onSocketConnected(connected: Boolean) {
-        lastState.update { it.copy(lastConnectionState = connected) }
-        listeners.forEach { listener ->
-            listener.onSocketConnected(connected, serverip,serverport)
-        }
-    }
-
-
-    var byteArraySocketFlow = MutableSharedFlow<ByteArray>(
-        extraBufferCapacity = 1
-    )
 
     companion object {
         val customScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -140,7 +92,7 @@ class ClientSocketTCP(
                                 writeChannel.writeByteArray(it)
                             }
                         } catch (ex: Exception) {
-                            println("TCP in w ${ex.message}")
+                            onError("TCP in w ${ex.message}")
                         }
 
                         processing = false

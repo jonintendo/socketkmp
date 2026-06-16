@@ -9,7 +9,8 @@ data class SocketProperties(
     var lastDatagramData: ByteArray = byteArrayOf(),
     var lastDatagramType: TipoPacote = TipoPacote.RAW,
     var lastConnectionState: Boolean = false,
-    var lastDatagramTime: Long = 0
+    var lastDatagramTime: Long = 0,
+    var lastError: String = ""
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

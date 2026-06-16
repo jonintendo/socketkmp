@@ -1,8 +1,7 @@
 package io.github.jonintendo.connection.socketkmp.server
 
-import io.github.jonintendo.connection.socketkmp.SocketProperties
+import io.github.jonintendo.connection.socketkmp.SocketKMP
 import io.github.jonintendo.connection.socketkmp.TipoPacote
-
 import io.ktor.network.selector.SelectorManager
 import io.ktor.network.sockets.ServerSocket
 import io.ktor.network.sockets.aSocket
@@ -10,57 +9,16 @@ import io.ktor.network.sockets.openReadChannel
 import io.ktor.network.sockets.openWriteChannel
 import io.ktor.utils.io.readByteArray
 import io.ktor.utils.io.writeByteArray
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.IO
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.io.InternalIoApi
 
-class ServerSocketTCP( val port: Int) {
-    private var myJob: Job? = null
-    val customScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+class ServerSocketTCP(
+    val port: Int
+): SocketKMP("",port) {
+
     var serverSocket: ServerSocket? = null
-
-
-    private val lastState = MutableStateFlow<SocketProperties>(SocketProperties())
-    val lastStateFlow: SharedFlow<SocketProperties> = lastState
-
-
-    private var listeners = mutableListOf<SocketServerListener>()
-    fun addListener(listener: SocketServerListener) {
-        listeners.add(listener)
-    }
-
-    fun removeListener(listener: SocketServerListener) {
-        listeners.remove(listener)
-    }
-
-    private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
-        lastState.update { it.copy(lastDatagramData = datagram, lastDatagramType = tipoPacote) }
-        listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram, tipoPacote, port)
-        }
-    }
-
-    private fun onSocketConnected(connected: Boolean) {
-        lastState.update { it.copy(lastConnectionState = connected) }
-        listeners.forEach { listener ->
-            listener.onSocketConnected(connected, port)
-        }
-    }
-
-
-    var byteArraySocketFlow = MutableSharedFlow<ByteArray>(
-        extraBufferCapacity = 1
-    )
-
 
     fun start(tipo: TipoPacote = TipoPacote.RAW) {
         myJob = customScope.launch {

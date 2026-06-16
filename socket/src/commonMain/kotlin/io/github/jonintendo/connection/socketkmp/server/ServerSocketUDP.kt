@@ -1,79 +1,29 @@
 package io.github.jonintendo.connection.socketkmp.server
 
 
-import io.github.jonintendo.connection.socketkmp.server.SocketServerListener
-import io.github.jonintendo.connection.socketkmp.SocketProperties
+import io.github.jonintendo.connection.socketkmp.SocketKMP
 import io.github.jonintendo.connection.socketkmp.TipoPacote
-
 import io.ktor.network.selector.SelectorManager
 import io.ktor.network.sockets.BoundDatagramSocket
 import io.ktor.network.sockets.Datagram
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
 import io.ktor.utils.io.core.buildPacket
-import io.ktor.utils.io.core.toByteArray
 import io.ktor.utils.io.core.writeFully
-
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.IO
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.io.Buffer
 import kotlinx.io.readByteArray
-import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
-class ServerSocketUDP(val port: Int) {
-    private var myJob: Job? = null
-    val customScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+class ServerSocketUDP(
+    val port: Int
+) : SocketKMP("", port) {
+
+
     var serverSocket: BoundDatagramSocket? = null
-
-
-    private val lastState = MutableStateFlow<SocketProperties>(SocketProperties())
-    val lastStateFlow: SharedFlow<SocketProperties> = lastState
-
-    private var listeners = mutableListOf<SocketServerListener>()
-    fun addListener(listener: SocketServerListener) {
-        listeners.add(listener)
-    }
-
-    fun removeListener(listener: SocketServerListener) {
-        listeners.remove(listener)
-    }
-
-    @OptIn(ExperimentalTime::class)
-    private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
-        lastState.update {
-            it.copy(
-                lastDatagramData = datagram,
-                lastDatagramType = tipoPacote,
-                lastDatagramTime = Clock.System.now().epochSeconds
-            )
-        }
-        listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram, tipoPacote, port)
-        }
-    }
-
-    private fun onSocketConnected(connected: Boolean) {
-        lastState.update { it.copy(lastConnectionState = connected) }
-        listeners.forEach { listener ->
-            listener.onSocketConnected(connected, port)
-        }
-    }
-
-
-    var byteArraySocketFlow = MutableSharedFlow<ByteArray>(
-        extraBufferCapacity = 1
-    )
 
     val mutex = Mutex()
 
@@ -87,8 +37,6 @@ class ServerSocketUDP(val port: Int) {
                 var senderPort: Int? = null
                 onSocketConnected(true)
                 println("Server is listening at ${serverSocket!!.localAddress}")
-
-
 
                 launch {
                     for (datagram in serverSocket!!.incoming) {

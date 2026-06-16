@@ -1,84 +1,33 @@
 package io.github.jonintendo.connection.socketkmp.client
 
 
-import io.github.jonintendo.connection.socketkmp.server.SocketServerListener
-import io.github.jonintendo.connection.socketkmp.SocketProperties
+import io.github.jonintendo.connection.socketkmp.SocketKMP
 import io.github.jonintendo.connection.socketkmp.TipoPacote
 import io.github.jonintendo.connection.socketkmp.byteArrayToIntLittleEndian
 import io.ktor.network.selector.SelectorManager
 import io.ktor.network.sockets.Datagram
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
-import io.ktor.util.reflect.instanceOf
 import io.ktor.utils.io.core.buildPacket
 import io.ktor.utils.io.core.toByteArray
 import io.ktor.utils.io.core.writeFully
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
 import kotlinx.io.readByteArray
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
-import kotlin.time.Duration
 import kotlin.time.ExperimentalTime
-import kotlin.time.Instant
 
 class ClientSocketUDP(
-    val serverip: String,
-    val serverport: Int,
-) {
+    val ip: String,
+    val port: Int,
+) : SocketKMP(ip, port) {
 
-    private var myJob: Job? = null
-    val customScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
-
-    private val lastState = MutableStateFlow<SocketProperties>(SocketProperties())
-    val lastStateFlow: SharedFlow<SocketProperties> = lastState
-
-
-    private var listeners = mutableListOf<SocketClientListener>()
-    fun addListener(listener: SocketClientListener) {
-        listeners.add(listener)
-    }
-
-    fun removeListener(listener: SocketClientListener) {
-        listeners.remove(listener)
-    }
-
-    @OptIn(ExperimentalTime::class)
-    private fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
-        lastState.update {
-            it.copy(
-                lastDatagramData = datagram,
-                lastDatagramType = tipoPacote,
-                lastDatagramTime = Clock.System.now().epochSeconds
-            )
-        }
-        listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram, tipoPacote, serverip, serverport)
-        }
-    }
-
-    private fun onSocketConnected(connected: Boolean) {
-        lastState.update { it.copy(lastConnectionState = connected) }
-        listeners.forEach { listener ->
-            listener.onSocketConnected(connected, serverip, serverport)
-        }
-    }
-
-
-    var byteArraySocketFlow = MutableSharedFlow<ByteArray>(
-        extraBufferCapacity = 1
-    )
 
     companion object {
         val customScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -118,14 +67,20 @@ class ClientSocketUDP(
 
                 launch {
                     while (true) {
-                        socket.outgoing.send(
-                            Datagram(
-                                Buffer().apply { write("oi".toByteArray()) },
-                                InetSocketAddress(serverip, serverport)
+                        try {
+                            socket.outgoing.send(
+                                Datagram(
+                                    Buffer().apply { write("oi".toByteArray()) },
+                                    InetSocketAddress(serverip, serverport)
+                                )
                             )
-                        )
-                        if ((Clock.System.now().epochSeconds - lastState.value.lastDatagramTime) > 600)
+                            onSocketConnected(true)
+//                            if ((Clock.System.now().epochSeconds - lastState.value.lastDatagramTime) > 600)
+//                                onSocketConnected(false)
+                        } catch (ex: Exception) {
+                            onError(ex.message ?: "Erro desconhecido")
                             onSocketConnected(false)
+                        }
 
 //                        println((Clock.System.now().epochSeconds - lastState.value.lastDatagramTime))
 //                        println((Clock.System.now().epochSeconds))
@@ -153,7 +108,7 @@ class ClientSocketUDP(
                                 )
                             }
                         } catch (ex: Exception) {
-                            println("UDP in w${ex.message}")
+                            onError("UDP in w${ex.message}")
                         }
                     }
                 }
@@ -177,7 +132,7 @@ class ClientSocketUDP(
                         } catch (e: CancellationException) {
                             throw e // Always rethrow cancellation exceptions!
                         } catch (ex: Exception) {
-                            println("UDP in r${ex.message}")
+                            onError("UDP in r${ex.message}")
                         }
                     }
                 }
@@ -186,7 +141,8 @@ class ClientSocketUDP(
                 throw e // Always rethrow cancellation exceptions!
             } catch (ex: Exception) {
                 onSocketConnected(false)
-                println("UDP out ${ex.message}")
+                onError("UDP out ${ex.message}")
+
             }
         }
     }
