@@ -59,4 +59,6 @@ open class SocketKMP(
 
     protected var myJob: Job? = null
     val customScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    protected var reading = false
+    protected var errorCount = 0
 }

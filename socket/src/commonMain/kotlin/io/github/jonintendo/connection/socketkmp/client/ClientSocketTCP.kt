@@ -17,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -60,6 +61,9 @@ class ClientSocketTCP(
     }
 
     fun start(tipo: TipoPacote = TipoPacote.RAW) {
+        reading = true
+        errorCount = 0
+
         myJob = customScope.launch {
             try {
                 val selectorManager = SelectorManager(Dispatchers.IO)
@@ -103,7 +107,7 @@ class ClientSocketTCP(
                     val readChannel = socket.openReadChannel()
                     //val writeChannel = socket.openWriteChannel(autoFlush = true)
                     try {
-                        while (true) {
+                        while (reading) {
                             try {
                                 //writeChannel.writeStringUtf8("Hello from Client!\n")
                                 when (tipo) {
@@ -124,6 +128,12 @@ class ClientSocketTCP(
                             } catch (e: CancellationException) {
                                 throw e // Always rethrow cancellation exceptions!
                             } catch (ex: Exception) {
+                                if (errorCount > 5)
+                                    stop()
+                                else {
+                                    errorCount++
+                                    delay(1000)
+                                }
                                 println("TCP in ${ex.message}")
                             }
                         }
@@ -209,6 +219,7 @@ class ClientSocketTCP(
     }
 
     fun stop() {
+        reading = false
         myJob?.cancel()
         onSocketConnected(false)
     }
