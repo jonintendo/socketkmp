@@ -54,6 +54,7 @@ class ClientSocketUDP(
         }
     }
 
+    var lastServerMessageTime: Long = 0
 
     @OptIn(ExperimentalTime::class)
     fun start(tipo: TipoPacote = TipoPacote.RAW) {
@@ -64,29 +65,31 @@ class ClientSocketUDP(
                     .udp()
                     .connect(InetSocketAddress(serverip, serverport))
 
-
-                launch {
-                    while (true) {
-                        try {
-                            socket.outgoing.send(
-                                Datagram(
-                                    Buffer().apply { write("oi".toByteArray()) },
-                                    InetSocketAddress(serverip, serverport)
+                if (tipo == TipoPacote.RAW) {
+                    launch {
+                        while (true) {
+                            try {
+                                socket.outgoing.send(
+                                    Datagram(
+                                        Buffer().apply { write("oi".toByteArray()) },
+                                        InetSocketAddress(serverip, serverport)
+                                    )
                                 )
-                            )
-                            onSocketConnected(true)
-//                            if ((Clock.System.now().epochSeconds - lastState.value.lastDatagramTime) > 600)
-//                                onSocketConnected(false)
-                        } catch (ex: Exception) {
-                            onError(ex.message ?: "Erro desconhecido")
-                            onSocketConnected(false)
+//                            onSocketConnected(true)
+//                            println("true")
+                            } catch (ex: Exception) {
+                                onError(ex.message ?: "Erro desconhecido")
+                                //   onSocketConnected(false)
+                            } finally {
+                                println((Clock.System.now().epochSeconds - lastServerMessageTime))
+                                println((Clock.System.now().epochSeconds))
+                                println((lastServerMessageTime))
+                                if ((Clock.System.now().epochSeconds - lastServerMessageTime) > 10)
+                                    onSocketConnected(false)
+                            }
+
+                            delay(1000)
                         }
-
-//                        println((Clock.System.now().epochSeconds - lastState.value.lastDatagramTime))
-//                        println((Clock.System.now().epochSeconds))
-//                        println(( lastState.value.lastDatagramTime))
-
-                        delay(1000)
                     }
                 }
 
@@ -120,7 +123,12 @@ class ClientSocketUDP(
                             onSocketConnected(true)
                             when (tipo) {
                                 TipoPacote.RAW -> {
-                                    onDatagramReceived(datagramValue, TipoPacote.RAW)
+                                    if (datagramValue.decodeToString() == "oi") {
+                                        println("Conectado ao server $serverip:$serverport")
+                                        lastServerMessageTime = Clock.System.now().epochSeconds
+                                    } else {
+                                        onDatagramReceived(datagramValue, TipoPacote.RAW)
+                                    }
                                 }
 
                                 TipoPacote.FRAME -> {

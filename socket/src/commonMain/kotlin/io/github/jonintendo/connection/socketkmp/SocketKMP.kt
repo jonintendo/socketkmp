@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.update
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 open class SocketKMP(
     val serverip: String,
@@ -28,8 +30,9 @@ open class SocketKMP(
         listeners.remove(listener)
     }
 
+    @OptIn(ExperimentalTime::class)
     protected fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
-        lastState.update { it.copy(lastDatagramData = datagram, lastDatagramType = tipoPacote) }
+        lastState.update { it.copy(lastDatagramData = datagram, lastDatagramType = tipoPacote, lastDatagramTime = Clock.System.now().epochSeconds ) }
         listeners.forEach { listener ->
             listener.onDatagramReceived(datagram, tipoPacote, serverip, serverport)
         }

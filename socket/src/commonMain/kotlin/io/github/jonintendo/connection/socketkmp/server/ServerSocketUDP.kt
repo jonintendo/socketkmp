@@ -9,6 +9,7 @@ import io.ktor.network.sockets.Datagram
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
 import io.ktor.utils.io.core.buildPacket
+import io.ktor.utils.io.core.toByteArray
 import io.ktor.utils.io.core.writeFully
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -49,8 +50,15 @@ class ServerSocketUDP(
                             }
 
                             val datagramValue = datagram.packet.readByteArray()
-                            if (datagramValue.contentToString() == "oi") {
+
+                            if (datagramValue.decodeToString() == "oi") {
                                 println("Cliente $senderIp:$senderPort  conectado")
+                                serverSocket!!.outgoing.send(
+                                    Datagram(
+                                        Buffer().apply { write("oi".toByteArray()) },
+                                        InetSocketAddress(senderIp!!, senderPort!!)
+                                    )
+                                )
                             } else {
                                 onDatagramReceived(datagramValue, TipoPacote.RAW)
                             }
