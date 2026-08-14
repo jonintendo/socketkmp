@@ -21,6 +21,10 @@ class ServerSocketTCP(
 
     var serverSocket: ServerSocket? = null
 
+    fun send(byteArray: ByteArray){
+        byteArraySocketFlow.tryEmit(byteArray)
+    }
+
     fun start(tipo: TipoPacote = TipoPacote.RAW) {
         reading = true
         errorCount = 0

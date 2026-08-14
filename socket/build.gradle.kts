@@ -78,7 +78,7 @@ kotlin {
 
 
 group = "io.github.jonintendo"
-version = "0.0.3"
+version = "0.0.4"
 
 mavenPublishing {
 

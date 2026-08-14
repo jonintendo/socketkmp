@@ -54,7 +54,7 @@ open class SocketKMP(
     }
 
 
-    var byteArraySocketFlow = MutableSharedFlow<ByteArray>(
+    protected var byteArraySocketFlow = MutableSharedFlow<ByteArray>(
         extraBufferCapacity = 1
     )
 
