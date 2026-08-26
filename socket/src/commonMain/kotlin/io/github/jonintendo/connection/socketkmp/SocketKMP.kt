@@ -58,6 +58,9 @@ open class SocketKMP(
         extraBufferCapacity = 1
     )
 
+    fun send(byteArray: ByteArray){
+        byteArraySocketFlow.tryEmit(byteArray)
+    }
 
 
     protected var myJob: Job? = null

@@ -26,10 +26,6 @@ class ServerSocketUDP(
 
     var serverSocket: BoundDatagramSocket? = null
 
-    fun send(byteArray: ByteArray){
-        byteArraySocketFlow.tryEmit(byteArray)
-    }
-
 
     val mutex = Mutex()
 
