@@ -1,6 +1,5 @@
 package io.github.jonintendo.connection.socketkmp
 
-import io.github.jonintendo.connection.socketkmp.SocketListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -8,49 +7,37 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 open class SocketKMP(
     val serverip: String,
     val serverport: Int,
 ) {
-    protected val lastState = MutableStateFlow<SocketProperties>(SocketProperties())
-    val lastStateFlow: SharedFlow<SocketProperties> = lastState
+    protected val lastStatus = MutableStateFlow(SocketStatus(false))
+    val lastStatusFlow = lastStatus.asStateFlow()
 
+    protected val lastData = MutableStateFlow(SocketData(byteArrayOf(), TipoPacote.RAW))
+    val lastDataFlow = lastData.asStateFlow()
 
-    protected var listeners = mutableListOf<SocketListener>()
-    fun addListener(listener: SocketListener) {
-        listeners.add(listener)
-    }
+    protected val lastNotification = MutableSharedFlow<SocketNotification>()
+    val lastNotificationFlow = lastNotification.asSharedFlow()
 
-    fun removeListener(listener: SocketListener) {
-        listeners.remove(listener)
-    }
 
     @OptIn(ExperimentalTime::class)
     protected fun onDatagramReceived(datagram: ByteArray, tipoPacote: TipoPacote) {
-        lastState.update { it.copy(lastDatagramData = datagram, lastDatagramType = tipoPacote, lastDatagramTime = Clock.System.now().epochSeconds ) }
-        listeners.forEach { listener ->
-            listener.onDatagramReceived(datagram, tipoPacote, serverip, serverport)
-        }
+        lastData.update { SocketData(datagram, tipoPacote) }
     }
 
 
     protected fun onSocketConnected(connected: Boolean) {
-        lastState.update { it.copy(lastConnectionState = connected) }
-        listeners.forEach { listener ->
-            listener.onSocketConnected(connected, serverip, serverport)
-        }
+        lastStatus.update { SocketStatus(connected) }
     }
 
     protected fun onError(msg: String) {
-        lastState.update { it.copy(lastError = msg) }
-        listeners.forEach { listener ->
-            listener.onError(msg, serverip, serverport)
-        }
+        lastNotification.tryEmit(SocketNotification(TypeNotification.Error, msg))
     }
 
 
@@ -58,7 +45,7 @@ open class SocketKMP(
         extraBufferCapacity = 1
     )
 
-    fun send(byteArray: ByteArray){
+    fun send(byteArray: ByteArray) {
         byteArraySocketFlow.tryEmit(byteArray)
     }
 
